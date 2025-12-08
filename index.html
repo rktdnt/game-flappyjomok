@@ -8,21 +8,20 @@
     *{box-sizing:border-box;margin:0;padding:0}
     body{
       background:#111;
-      display:flex;
-      align-items:center;
-      justify-content:center;
+      display:block;
       height:100vh;
+      width:100vw;
+      margin:0;
+      overflow:hidden;
       font-family:Arial,Helvetica,sans-serif;
       color:#fff;
     }
-    #gameContainer{position:relative;width:100%;max-width:480px}
+    #gameContainer{position:fixed; inset:0}
     canvas{
-      width:100%;
-      height:auto;
-      background:linear-gradient(#4d9fff,#88ddff);
-      border-radius:12px;
+      width:100vw;
+      height:100vh;
+      background:#4d9fff; /* will be overridden by drawn image */
       display:block;
-      box-shadow:0 8px 30px rgba(0,0,0,0.5);
     }
     #overlay{
       position:absolute;
@@ -81,11 +80,11 @@
 </head>
 <body>
   <div id="gameContainer">
-    <canvas id="game" width="480" height="640"></canvas>
+    <canvas id="game"></canvas>
 
     <div id="overlay">
       <h1 id="titleText">Flappy Shape</h1>
-      <p id="subText">Tekan SPASI / TAP untuk mulai — 1/2/3 ganti gambar</p>
+      <p id="subText">TAP di mana saja untuk mulai — 1/2/3 ganti gambar</p>
     </div>
 
     <div id="info">
@@ -120,16 +119,16 @@ const localImages = {
 };
 
 const difficultyConfig = {
-  initialGap: 280,           // gap awal (px)
-  minGap: 180,               // gap minimal (px)
-  shrinkPerSecond: 5.0,      // gap mengecil per detik
-  shrinkPerScore: 2.0,       // tambahan pengecilan per skor
-  basePipeSpeed: 2.6,        // kecepatan pipa awal
-  maxPipeSpeed: 6.0,         // kecepatan maksimal
-  speedIncreasePerScore: 0.12, // kecepatan naik per skor
-  basePipeSpacing: 340,      // jarak awal antar pipa
-  minPipeSpacing: 220,       // jarak minimal antar pipa
-  spacingDecreasePerScore: 1.5 // pengurangan spacing per skor
+  initialGap: 300,           // gap awal (px)
+  minGap: 200,               // gap minimal (px)
+  shrinkPerSecond: 3.0,      // gap mengecil per detik (lebih pelan)
+  shrinkPerScore: 1.2,       // tambahan pengecilan per skor (lebih pelan)
+  basePipeSpeed: 1.6,        // kecepatan pipa awal (lebih pelan)
+  maxPipeSpeed: 4.0,         // kecepatan maksimal (diturunkan)
+  speedIncreasePerScore: 0.08, // kecepatan naik per skor (lebih pelan)
+  basePipeSpacing: 360,      // jarak awal antar pipa (lebih longgar)
+  minPipeSpacing: 260,       // jarak minimal antar pipa (lebih longgar)
+  spacingDecreasePerScore: 1.0 // pengurangan spacing per skor (lebih pelan)
 };
 
 /* fallback svg data-url jika foto tidak ada */
@@ -165,7 +164,8 @@ const gapText = document.getElementById('gapText');
 const speedText = document.getElementById('speedText');
 const shapePreview = document.getElementById('shapePreview');
 
-const W = canvas.width, H = canvas.height;
+let W = window.innerWidth, H = window.innerHeight;
+canvas.width = W; canvas.height = H;
 const shapes = ['circle','square','triangle'];
 
 const player = {
@@ -180,7 +180,7 @@ const player = {
 
 let score = 0;
 let pipes = [];
-const pipeWidth = 70;
+const pipeWidth = 90;
 
 let gameRunning = false;
 let gameOver = false;
@@ -197,6 +197,14 @@ function updatePreview(){
     shapePreview.style.backgroundPosition = 'center';
   }
 }
+/* background image path (change as needed) */
+const bgImagePath = 'local/bg.jpg';
+let bgImage = new Image();
+let bgImageLoaded = false;
+bgImage.onload = ()=>{ bgImageLoaded = true; };
+bgImage.onerror = ()=>{ bgImageLoaded = false; };
+bgImage.src = bgImagePath;
+
 
 /* dynamic difficulty calculations */
 function computeCurrentGap(){
@@ -226,17 +234,25 @@ function spawnPipe(){
   const gap = computeCurrentGap();
   const margin = 60;
   const gapY = margin + Math.random()*(H - 2*margin - gap);
-  pipes.push({ x: W + 40, gapY, gapHeight: gap, passed: false });
+  // add vertical oscillation for moving obstacle
+  const oscAmp = Math.min(70, Math.max(24, Math.floor(H * 0.06))); // amplitude a bit smaller
+  const oscSpeed = 0.0009 + Math.random()*0.0007; // slower oscillation
+  const oscPhase = Math.random() * Math.PI * 2;
+  pipes.push({ x: W + 40, gapY, gapHeight: gap, passed: false, oscAmp, oscSpeed, oscPhase });
 }
 
 /* start / flap */
 function flap(){
-  if(!gameRunning && !gameOver){
+  if(gameOver){
+    location.reload();
+    return;
+  }
+  if(!gameRunning){
     gameRunning = true;
     overlay.style.display = 'none';
     gameStartTimestamp = performance.now();
   }
-  if(!gameOver) player.vy = player.flapStrength;
+  player.vy = player.flapStrength;
 }
 
 /* random shape (avoid same) */
@@ -255,8 +271,10 @@ function triggerGameOver(){
   overlay.style.display = 'flex';
   overlay.style.opacity = 1;
   document.getElementById('titleText').textContent = 'Game Over';
-  document.getElementById('subText').innerHTML = `Skor kamu: ${score}<br>Tekan ENTER untuk restart`;
+  document.getElementById('subText').innerHTML = `Skor kamu: ${score}<br>TAP di mana saja untuk restart`;
 }
+
+function getGroundHeight(){ return Math.max(60, Math.floor(H*0.06)); }
 
 /* main update loop */
 function update(now){
@@ -269,7 +287,7 @@ function update(now){
     player.y += player.vy;
 
     // bounds
-    if(player.y - player.radius < 0 || player.y + player.radius > H - 60){
+    if(player.y - player.radius < 0 || player.y + player.radius > H - getGroundHeight()){
       triggerGameOver();
     }
 
@@ -284,6 +302,17 @@ function update(now){
     for(let i = pipes.length-1; i>=0; i--){
       const p = pipes[i];
       p.x -= currentSpeed;
+
+      // apply vertical oscillation to the gap center
+      const t = now; // ms from rAF time
+      const baseCenter = p.gapY + p.gapHeight/2;
+      const oscOffset = Math.sin(p.oscPhase + t * p.oscSpeed) * p.oscAmp;
+      const newCenter = baseCenter + oscOffset;
+      // clamp so pipes stay within bounds
+      const minCenter = p.gapHeight/2 + 20;
+      const maxCenter = H - getGroundHeight() - p.gapHeight/2 - 20;
+      const clampedCenter = Math.min(Math.max(newCenter, minCenter), maxCenter);
+      p.gapY = clampedCenter - p.gapHeight/2;
 
       const withinX = (player.x + player.radius > p.x) && (player.x - player.radius < p.x + pipeWidth);
       if(withinX){
@@ -315,21 +344,33 @@ function update(now){
 
 /* draw helpers */
 function drawBackground(){
+  const groundHeight = Math.max(60, Math.floor(H*0.06));
+  // draw sky/background image (cover behavior)
+  if(bgImageLoaded){
+    // compute cover scaling
+    const imgW = bgImage.naturalWidth || bgImage.width;
+    const imgH = bgImage.naturalHeight || bgImage.height;
+    const scale = Math.max(W / imgW, H / imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+    const dx = (W - drawW) / 2;
+    const dy = (H - drawH) / 2;
+    ctx.drawImage(bgImage, dx, dy, drawW, drawH);
+  } else {
+    // fallback gradient sky
+    const grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#4d9fff');
+    grad.addColorStop(1,'#88ddff');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+  }
   ctx.fillStyle = "#27ae60";
-  ctx.fillRect(0, H-60, W, 60);
+  ctx.fillRect(0, H-groundHeight, W, groundHeight);
   ctx.fillStyle = "#2ecc71";
-  ctx.fillRect(0, H-55, W, 55);
+  ctx.fillRect(0, H-groundHeight+5, W, groundHeight-5);
 
   ctx.fillStyle = "rgba(255,255,255,0.85)";
-  for(let i=0;i<3;i++){
-    const baseX = (Date.now()/40 + i*200) % (W + 150) - 75;
-    const baseY = 80 + i*50;
-    ctx.beginPath();
-    ctx.arc(baseX, baseY, 26, 0, Math.PI*2);
-    ctx.arc(baseX+28, baseY-12, 22, 0, Math.PI*2);
-    ctx.arc(baseX-28, baseY-12, 22, 0, Math.PI*2);
-    ctx.fill();
-  }
+  // optional clouds removed to let background image show clearly
 }
 
 function drawPlayer(){
@@ -383,10 +424,10 @@ window.addEventListener('keydown', (e)=>{
   else if(e.code === 'Digit1'){ player.shape = 'circle'; updatePreview(); }
   else if(e.code === 'Digit2'){ player.shape = 'square'; updatePreview(); }
   else if(e.code === 'Digit3'){ player.shape = 'triangle'; updatePreview(); }
-  else if(e.code === 'Enter'){ if(gameOver) location.reload(); }
 });
-canvas.addEventListener('mousedown', flap);
-canvas.addEventListener('touchstart', (e)=>{ e.preventDefault(); flap(); }, {passive:false});
+// Tap/click anywhere to start or restart
+document.addEventListener('mousedown', flap);
+document.addEventListener('touchstart', (e)=>{ e.preventDefault(); flap(); }, {passive:false});
 
 /* mobile buttons */
 const mobileControls = document.getElementById('mobileControls');
@@ -407,8 +448,14 @@ btn3.addEventListener('touchstart', (e)=>{ e.preventDefault(); player.shape='tri
 
 /* adapt UI */
 function adaptUI(){ const isMobile = window.innerWidth <= 480 || ('ontouchstart' in window && window.innerWidth < 768); mobileControls.style.display = isMobile ? 'flex' : 'none'; }
-window.addEventListener('resize', adaptUI);
-adaptUI();
+function resizeCanvas(){
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  // keep player within bounds when resizing
+  player.y = Math.min(Math.max(player.radius+5, player.y), H - player.radius - 5);
+}
+window.addEventListener('resize', ()=>{ resizeCanvas(); adaptUI(); });
+resizeCanvas();
 
 /* start */
 updatePreview();
