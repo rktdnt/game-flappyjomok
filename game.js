@@ -1,4 +1,4 @@
-/* ========== 1-tap fly - Game Logic ========== */
+/* ========== 1-tap flappy - Game Logic ========== */
 
 /* ========= CONFIG ========= */
 const localImages = {
